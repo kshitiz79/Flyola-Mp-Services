@@ -19,7 +19,7 @@ func main() {
 	cfg := config.Load()
 
 	// Initialize database
-	db, err := database.Initialize(cfg.DatabaseURL)
+	db, err := database.Initialize(cfg.GetDatabaseDSN())
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
