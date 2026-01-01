@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  flyola-services:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - GIN_MODE=release
+      - DB_HOST=mysql
+      - REDIS_HOST=redis
+    depends_on:
+      - mysql
+      - redis
+    volumes:
+      - ./logs:/root/logs
+      - ./uploads:/root/uploads
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: flyola_services
+      MYSQL_USER: flyola
+      MYSQL_PASSWORD: flyola123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./migrations:/docker-entrypoint-initdb.d
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  adminer:
+    image: adminer
+    ports:
+      - "8081:8080"
+    depends_on:
+      - mysql
+
+volumes:
+  mysql_data:
+  redis_data:
