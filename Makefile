@@ -49,6 +49,30 @@ test-coverage:
 	@go test -v -coverprofile=coverage.out ./...
 	@go tool cover -html=coverage.out -o coverage.html
 
+# Test database connectivity
+.PHONY: test-db
+test-db:
+	@echo "Testing database connectivity..."
+	@go run cmd/test-db/main.go
+
+# Create database
+.PHONY: db-create
+db-create:
+	@echo "Creating database..."
+	@mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS flyola_services CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+# Drop database (use with caution!)
+.PHONY: db-drop
+db-drop:
+	@echo "⚠️  WARNING: This will delete the database!"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		mysql -u root -p -e "DROP DATABASE IF EXISTS flyola_services;"; \
+		echo "\n✅ Database dropped"; \
+	else \
+		echo "\n❌ Cancelled"; \
+	fi
+
 # Format code
 .PHONY: fmt
 fmt:
@@ -95,6 +119,9 @@ help:
 	@echo "  clean         - Clean build artifacts"
 	@echo "  test          - Run tests"
 	@echo "  test-coverage - Run tests with coverage"
+	@echo "  test-db       - Test database connectivity"
+	@echo "  db-create     - Create database"
+	@echo "  db-drop       - Drop database (with confirmation)"
 	@echo "  fmt           - Format code"
 	@echo "  lint          - Lint code (requires golangci-lint)"
 	@echo "  tidy          - Tidy dependencies"

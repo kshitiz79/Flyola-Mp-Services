@@ -29,6 +29,7 @@ func Initialize(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	bookingService := services.NewBookingService(db)
 	paymentService := services.NewPaymentService(db)
 	reviewService := services.NewReviewService(db)
+	holidayPackageService := services.NewHolidayPackageService(db, cfg.NodeBackendURL)
 
 	// Initialize handlers
 	cityHandler := handlers.NewCityHandler(cityService)
@@ -40,6 +41,7 @@ func Initialize(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	bookingHandler := handlers.NewBookingHandler(bookingService)
 	paymentHandler := handlers.NewPaymentHandler(paymentService, bookingService, cfg.RazorpayID, cfg.RazorpaySecret)
 	reviewHandler := handlers.NewReviewHandler(reviewService)
+	holidayPackageHandler := handlers.NewHolidayPackageHandler(holidayPackageService)
 
 	// Health check endpoint
 	r.GET("/health", func(c *gin.Context) {
@@ -62,6 +64,7 @@ func Initialize(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		routes.SetupBookingRoutes(v1, bookingHandler)
 		routes.SetupPaymentRoutes(v1, paymentHandler)
 		routes.SetupReviewRoutes(v1, reviewHandler)
+		routes.SetupHolidayPackageRoutes(v1, holidayPackageHandler)
 	}
 
 	return r

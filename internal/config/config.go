@@ -27,6 +27,9 @@ type Config struct {
 	// Payment Gateway
 	RazorpayID     string
 	RazorpaySecret string
+
+	// External Services
+	NodeBackendURL string
 }
 
 // GetDatabaseDSN returns the MySQL DSN connection string
@@ -74,6 +77,9 @@ func Load() *Config {
 		// Payment Gateway
 		RazorpayID:     getEnv("RAZORPAY_KEY_ID", ""),
 		RazorpaySecret: getEnv("RAZORPAY_KEY_SECRET", ""),
+
+		// External Services
+		NodeBackendURL: getEnv("NODE_BACKEND_URL", "http://localhost:3001"),
 	}
 
 	// Debug logging (don't log secrets in production)
