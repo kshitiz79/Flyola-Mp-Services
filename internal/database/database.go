@@ -1,6 +1,7 @@
 package database
 
 import (
+	"flyola-services/internal/models"
 	"log"
 	"time"
 
@@ -41,6 +42,20 @@ func Initialize(databaseURL string) (*gorm.DB, error) {
 	}
 
 	log.Println("🔌 Database connection pool configured successfully")
+
+	// Auto-migrate holiday package models
+	err = db.AutoMigrate(
+		&models.HolidayPackage{},
+		&models.PackageSchedule{},
+		&models.PackageBooking{},
+		&models.PackagePassenger{},
+		&models.PackageScheduleBooking{},
+	)
+	if err != nil {
+		log.Printf("Warning: Failed to auto-migrate holiday package models: %v", err)
+	} else {
+		log.Println("✅ Holiday package models migrated successfully")
+	}
 
 	// Auto-migrate models (disabled for now to avoid schema conflicts)
 	// err = db.AutoMigrate(

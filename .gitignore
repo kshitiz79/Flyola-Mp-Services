@@ -1,51 +1,51 @@
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# # Binaries for programs and plugins
+# *.exe
+# *.exe~
+# *.dll
+# *.so
+# *.dylib
 
-# Test binary, built with `go test -c`
-*.test
+# # Test binary, built with `go test -c`
+# *.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
-*.out
+# # Output of the go coverage tool, specifically when used with LiteIDE
+# *.out
 
-# Dependency directories (remove the comment below to include it)
-vendor/
+# # Dependency directories (remove the comment below to include it)
+# vendor/
 
-# Go workspace file
-go.work
+# # Go workspace file
+# go.work
 
-# Environment variables
-.env
+# # Environment variables
+# .env
 
-# Logs
-logs/
-*.log
+# # Logs
+# logs/
+# *.log
 
-# Uploads
-uploads/
+# # Uploads
+# uploads/
 
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
+# # IDE files
+# .vscode/
+# .idea/
+# *.swp
+# *.swo
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+# # OS generated files
+# .DS_Store
+# .DS_Store?
+# ._*
+# .Spotlight-V100
+# .Trashes
+# ehthumbs.db
+# Thumbs.db
 
-# Build output
-bin/
-dist/
+# # Build output
+# bin/
+# dist/
 
-# Temporary files
-tmp/
-temp/
+# # Temporary files
+# tmp/
+# temp/

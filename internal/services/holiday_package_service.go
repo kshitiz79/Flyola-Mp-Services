@@ -33,10 +33,32 @@ func (s *HolidayPackageService) GetAllPackages() ([]models.HolidayPackage, error
 	return packages, err
 }
 
+// GetAllPackageBookings retrieves all package bookings for admin
+func (s *HolidayPackageService) GetAllPackageBookings() ([]models.PackageBooking, error) {
+	var bookings []models.PackageBooking
+	err := s.db.Preload("Package").
+		Preload("Passengers").
+		Order("created_at DESC").
+		Find(&bookings).Error
+	return bookings, err
+}
+
 // GetPackageByID retrieves a specific package with all details
 func (s *HolidayPackageService) GetPackageByID(id uint) (*models.HolidayPackage, error) {
 	var pkg models.HolidayPackage
 	err := s.db.Where("id = ? AND status = ?", id, 1).
+		Preload("PackageSchedules").
+		First(&pkg).Error
+	if err != nil {
+		return nil, err
+	}
+	return &pkg, nil
+}
+
+// GetPackageByIDWithoutStatusFilter retrieves a specific package without status filtering (for internal use)
+func (s *HolidayPackageService) GetPackageByIDWithoutStatusFilter(id uint) (*models.HolidayPackage, error) {
+	var pkg models.HolidayPackage
+	err := s.db.Where("id = ?", id).
 		Preload("PackageSchedules").
 		First(&pkg).Error
 	if err != nil {
@@ -52,6 +74,42 @@ func (s *HolidayPackageService) GetPackagesByType(packageType string) ([]models.
 		Preload("PackageSchedules").
 		Find(&packages).Error
 	return packages, err
+}
+
+// GetPackagesByDate retrieves packages available on a specific date
+func (s *HolidayPackageService) GetPackagesByDate(dateStr string) ([]models.HolidayPackage, error) {
+	// Parse the date
+	targetDate, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the weekday for the target date (for future use)
+	_ = targetDate.Weekday().String()
+
+	// For now, we'll return packages that have schedules operating on this weekday
+	// This is a simplified approach - in a real system, you'd want to check actual schedule availability
+	var packages []models.HolidayPackage
+	
+	// Get all active packages with their schedules
+	err = s.db.Where("status = ?", 1).
+		Preload("PackageSchedules").
+		Find(&packages).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter packages that have schedules available on the target date
+	// This is a basic implementation - you might want to integrate with the Node.js backend
+	// to check actual schedule availability using the getScheduleBetweenAirportDate endpoint
+	var availablePackages []models.HolidayPackage
+	for _, pkg := range packages {
+		// For now, include all packages (you can enhance this logic)
+		// In a real implementation, you'd check if the package's schedules are available on the target date
+		availablePackages = append(availablePackages, pkg)
+	}
+
+	return availablePackages, nil
 }
 
 // CreatePackageBooking creates a new package booking
@@ -220,6 +278,7 @@ func (s *HolidayPackageService) CreatePackage(pkg *models.HolidayPackage) error 
 
 		// Create package schedules if provided
 		for i, schedule := range pkg.PackageSchedules {
+			schedule.ID = 0 // Clear any ID from request to avoid conflicts
 			schedule.PackageID = pkg.ID
 			schedule.SequenceOrder = i + 1
 			if err := tx.Create(&schedule).Error; err != nil {
@@ -229,6 +288,67 @@ func (s *HolidayPackageService) CreatePackage(pkg *models.HolidayPackage) error 
 
 		return nil
 	})
+}
+
+// UpdatePackage updates an existing holiday package
+func (s *HolidayPackageService) UpdatePackage(pkg *models.HolidayPackage) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Get the existing package to preserve created_at
+		var existingPkg models.HolidayPackage
+		if err := tx.First(&existingPkg, pkg.ID).Error; err != nil {
+			return err
+		}
+
+		// Preserve the original created_at
+		pkg.CreatedAt = existingPkg.CreatedAt
+		pkg.UpdatedAt = time.Now()
+
+		// Update the main package (excluding associations)
+		if err := tx.Omit("package_schedules").Save(pkg).Error; err != nil {
+			return err
+		}
+
+		// Check if there are any bookings for this package's schedules
+		var bookingCount int64
+		if err := tx.Table("package_schedule_bookings").
+			Joins("JOIN package_schedules ON package_schedule_bookings.package_schedule_id = package_schedules.id").
+			Where("package_schedules.package_id = ?", pkg.ID).
+			Count(&bookingCount).Error; err != nil {
+			return err
+		}
+
+		// If there are existing bookings, don't allow schedule changes
+		if bookingCount > 0 {
+			// Only update the main package fields, preserve existing schedules
+			// Return a custom error to indicate schedules weren't updated
+			return fmt.Errorf("package updated successfully, but schedules cannot be modified as there are existing bookings")
+		}
+
+		// If no bookings exist, we can safely update schedules
+		// Delete existing package schedules
+		if err := tx.Where("package_id = ?", pkg.ID).Delete(&models.PackageSchedule{}).Error; err != nil {
+			return err
+		}
+
+		// Create new package schedules if provided
+		for i, schedule := range pkg.PackageSchedules {
+			schedule.ID = 0 // Clear any ID from request to avoid conflicts
+			schedule.PackageID = pkg.ID
+			schedule.SequenceOrder = i + 1
+			if err := tx.Create(&schedule).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// DeletePackage soft deletes a holiday package by setting status to 0
+func (s *HolidayPackageService) DeletePackage(id uint) error {
+	return s.db.Model(&models.HolidayPackage{}).
+		Where("id = ?", id).
+		Update("status", 0).Error
 }
 func (s *HolidayPackageService) GetBookingByID(id uint) (*models.PackageBooking, error) {
 	var booking models.PackageBooking
@@ -327,4 +447,35 @@ func (s *HolidayPackageService) cancelIndividualSchedule(nodeBookingID int, book
 	}
 
 	return nil
+}
+// UpdateBookingPaymentStatus updates the payment status and booking status after successful payment
+func (s *HolidayPackageService) UpdateBookingPaymentStatus(bookingID uint, paymentID, paymentMethod string) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Get the booking
+		var booking models.PackageBooking
+		if err := tx.Preload("PackageScheduleBookings").First(&booking, bookingID).Error; err != nil {
+			return err
+		}
+
+		// Update payment details
+		booking.PaymentStatus = "paid"
+		booking.BookingStatus = "confirmed"
+		booking.PaymentID = paymentID
+		booking.PaymentMethod = paymentMethod
+
+		// Save the booking
+		if err := tx.Save(&booking).Error; err != nil {
+			return err
+		}
+
+		// Update all schedule bookings to confirmed
+		for _, scheduleBooking := range booking.PackageScheduleBookings {
+			scheduleBooking.BookingStatus = "confirmed"
+			if err := tx.Save(&scheduleBooking).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }

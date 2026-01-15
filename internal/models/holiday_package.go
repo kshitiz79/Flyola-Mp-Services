@@ -1,7 +1,9 @@
 package models
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"math/big"
 	"time"
 
 	"gorm.io/datatypes"
@@ -84,8 +86,9 @@ type PackagePassenger struct {
 	Age           int       `json:"age" gorm:"not null"`
 	Gender        string    `json:"gender" gorm:"type:enum('Male','Female','Other');not null"`
 	PassengerType string    `json:"passenger_type" gorm:"type:enum('Adult','Child','Infant');default:'Adult'"`
-	IDProofType   string    `json:"id_proof_type"`
-	IDProofNumber string    `json:"id_proof_number"`
+	Email         string    `json:"email" gorm:"size:255;comment:Email for primary passenger (contact person)"`
+	Phone         string    `json:"phone" gorm:"size:20;comment:Phone for primary passenger (contact person)"`
+	IsPrimary     bool      `json:"is_primary" gorm:"default:false;comment:true=Primary passenger (contact person), false=Additional passenger"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 	
@@ -192,8 +195,11 @@ func generatePNR() string {
 func generateRandomString(length int) string {
 	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, length)
+	
 	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+		// Use crypto/rand for cryptographically secure randomness
+		num, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		b[i] = charset[num.Int64()]
 	}
 	return string(b)
 }

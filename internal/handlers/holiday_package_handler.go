@@ -3,6 +3,7 @@ package handlers
 import (
 	"flyola-services/internal/models"
 	"flyola-services/internal/services"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -82,6 +83,35 @@ func (h *HolidayPackageHandler) GetPackagesByType(c *gin.Context) {
 	})
 }
 
+// GetPackagesByDate handles GET /api/v1/holiday-packages/date/{date}
+func (h *HolidayPackageHandler) GetPackagesByDate(c *gin.Context) {
+	dateStr := c.Param("date")
+
+	// Validate date format
+	_, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid date format, expected YYYY-MM-DD",
+		})
+		return
+	}
+
+	packages, err := h.service.GetPackagesByDate(dateStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to fetch packages: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    packages,
+	})
+}
+
 // CreatePackageBooking handles POST /api/v1/holiday-packages/book
 func (h *HolidayPackageHandler) CreatePackageBooking(c *gin.Context) {
 	var req struct {
@@ -92,6 +122,9 @@ func (h *HolidayPackageHandler) CreatePackageBooking(c *gin.Context) {
 		TravelDate      string                      `json:"travel_date"`
 		SpecialRequests string                      `json:"special_requests"`
 		Passengers      []models.PackagePassenger   `json:"passengers"`
+		PaymentID       string                      `json:"payment_id"`
+		PaymentMethod   string                      `json:"payment_method"`
+		PaymentStatus   string                      `json:"payment_status"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -142,6 +175,17 @@ func (h *HolidayPackageHandler) CreatePackageBooking(c *gin.Context) {
 	// Calculate total amount
 	totalAmount := pkg.PricePerPerson * float64(len(req.Passengers))
 
+	// Determine payment and booking status
+	paymentStatus := "pending"
+	bookingStatus := "pending"
+	if req.PaymentID != "" && req.PaymentStatus == "paid" {
+		paymentStatus = "paid"
+		bookingStatus = "confirmed"
+	}
+
+	log.Printf("🔍 Payment Info - PaymentID: %s, PaymentStatus: %s, PaymentMethod: %s", req.PaymentID, req.PaymentStatus, req.PaymentMethod)
+	log.Printf("🔍 Setting booking status: %s, payment status: %s", bookingStatus, paymentStatus)
+
 	// Create booking
 	booking := &models.PackageBooking{
 		PackageID:       req.PackageID,
@@ -153,7 +197,13 @@ func (h *HolidayPackageHandler) CreatePackageBooking(c *gin.Context) {
 		TotalAmount:     totalAmount,
 		SpecialRequests: req.SpecialRequests,
 		Passengers:      req.Passengers,
+		PaymentID:       req.PaymentID,
+		PaymentMethod:   req.PaymentMethod,
+		PaymentStatus:   paymentStatus,
+		BookingStatus:   bookingStatus,
 	}
+
+	log.Printf("🔍 Booking before save - PaymentID: %s, PaymentStatus: %s, BookingStatus: %s", booking.PaymentID, booking.PaymentStatus, booking.BookingStatus)
 
 	if err := h.service.CreatePackageBooking(booking); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -161,6 +211,18 @@ func (h *HolidayPackageHandler) CreatePackageBooking(c *gin.Context) {
 			"error":   "Failed to create booking: " + err.Error(),
 		})
 		return
+	}
+
+	// If payment is successful, book individual schedules through Node.js backend
+	if booking.PaymentStatus == "paid" && booking.BookingStatus == "confirmed" {
+		log.Printf("🎫 Booking individual schedules for package booking ID: %d", booking.ID)
+		if err := h.service.BookPackageSchedules(booking.ID); err != nil {
+			log.Printf("⚠️ Warning: Failed to book individual schedules: %v", err)
+			// Don't fail the entire booking, just log the error
+			// The booking is still created, but schedules need to be booked manually
+		} else {
+			log.Printf("✅ Successfully booked individual schedules for booking ID: %d", booking.ID)
+		}
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -195,7 +257,7 @@ func (h *HolidayPackageHandler) ConfirmPackageBooking(c *gin.Context) {
 	}
 
 	// Update payment status
-	if err := h.service.UpdatePaymentStatus(uint(id), "paid", req.PaymentID); err != nil {
+	if err := h.service.UpdateBookingPaymentStatus(uint(id), req.PaymentID, req.PaymentMethod); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"error":   "Failed to update payment status: " + err.Error(),
@@ -322,5 +384,119 @@ func (h *HolidayPackageHandler) CreatePackage(c *gin.Context) {
 		"success": true,
 		"data":    pkg,
 		"message": "Package created successfully",
+	})
+}
+
+// UpdatePackage handles PUT /api/v1/holiday-packages/{id} (Admin only)
+func (h *HolidayPackageHandler) UpdatePackage(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid package ID",
+		})
+		return
+	}
+
+	var pkg models.HolidayPackage
+	if err := c.ShouldBindJSON(&pkg); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// Validate required fields
+	if pkg.Title == "" || pkg.PricePerPerson <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Missing required fields: title and price_per_person",
+		})
+		return
+	}
+
+	// Set the ID for update
+	pkg.ID = uint(id)
+
+	// If status is not provided, preserve the existing status
+	if pkg.Status == 0 {
+		existingPkg, err := h.service.GetPackageByIDWithoutStatusFilter(uint(id))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"error":   "Package not found: " + err.Error(),
+			})
+			return
+		}
+		pkg.Status = existingPkg.Status
+	}
+
+	// Update package in database
+	if err := h.service.UpdatePackage(&pkg); err != nil {
+		// Check if it's the specific error about existing bookings
+		if err.Error() == "package updated successfully, but schedules cannot be modified as there are existing bookings" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"data":    pkg,
+				"message": "Package updated successfully",
+				"warning": "Schedules were not modified because there are existing bookings for this package",
+			})
+			return
+		}
+		
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to update package: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    pkg,
+		"message": "Package updated successfully",
+	})
+}
+
+// DeletePackage handles DELETE /api/v1/holiday-packages/{id} (Admin only)
+func (h *HolidayPackageHandler) DeletePackage(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid package ID",
+		})
+		return
+	}
+
+	if err := h.service.DeletePackage(uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to delete package: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Package deleted successfully",
+	})
+}
+
+// GetAllPackageBookings handles GET /api/v1/holiday-packages/admin/bookings (Admin only)
+func (h *HolidayPackageHandler) GetAllPackageBookings(c *gin.Context) {
+	bookings, err := h.service.GetAllPackageBookings()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to fetch bookings: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    bookings,
 	})
 }

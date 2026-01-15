@@ -13,7 +13,10 @@ func SetupHolidayPackageRoutes(router *gin.RouterGroup, holidayPackageHandler *h
 		packages.GET("", holidayPackageHandler.GetAllPackages)
 		packages.GET("/:id", holidayPackageHandler.GetPackageByID)
 		packages.GET("/type/:type", holidayPackageHandler.GetPackagesByType)
+		packages.GET("/date/:date", holidayPackageHandler.GetPackagesByDate)
 		packages.POST("", holidayPackageHandler.CreatePackage) // Admin only
+		packages.PUT("/:id", holidayPackageHandler.UpdatePackage) // Admin only
+		packages.DELETE("/:id", holidayPackageHandler.DeletePackage) // Admin only
 
 		// Booking routes
 		packages.POST("/book", holidayPackageHandler.CreatePackageBooking)
@@ -23,5 +26,8 @@ func SetupHolidayPackageRoutes(router *gin.RouterGroup, holidayPackageHandler *h
 		packages.GET("/bookings/:id", holidayPackageHandler.GetBookingByID)
 		packages.GET("/bookings/reference/:reference", holidayPackageHandler.GetBookingByReference)
 		packages.DELETE("/bookings/:id", holidayPackageHandler.CancelPackageBooking)
+		
+		// Admin routes
+		packages.GET("/admin/bookings", holidayPackageHandler.GetAllPackageBookings) // Admin only
 	}
 }
